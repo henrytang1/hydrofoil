@@ -1,7 +1,6 @@
 Hydrofoil
 ======
 
-
 ### Introduction
 Hydrofoil is a new linearizable replicated state machine (RSM) distributed algorithm that uses a combination of leader-based and leaderless protocols. This allows Hydrofoil to maintain the high throughput and reliability of leader-based RSMs, while reducing downtime and slowdowns when leaders fail by automatically switching to a leaderless algorithm.
 
@@ -38,8 +37,7 @@ It is a fork of the [Copilot project](https://github.com/princeton-sns/copilot),
 
 The [gobin-codegen](https://github.com/efficient/gobin-codegen) tool was used to generate marshaling and unmarshaling functions.
 
-
 ### About this Project
-This work serves as my senior thesis for my undergraduate computer science degree at Princeton University. It was certainly a stressful but exciting experience!
+This work serves as my senior thesis for my undergraduate computer science degree at Princeton University. It was originally published in 2023. Some adjustments have been made since to close out and augment the original thesis.
 
-I would like to thank Professor Wyatt Lloyd for being an amazing advisor throughout this entire process!
+I would like to thank Professor Wyatt Lloyd for being an incredible advisor throughout this process.
