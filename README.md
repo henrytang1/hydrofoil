@@ -41,3 +41,6 @@ The [gobin-codegen](https://github.com/efficient/gobin-codegen) tool was used to
 This work serves as my senior thesis for my undergraduate computer science degree at Princeton University. It was originally published in 2023. Some adjustments have been made since to close out and augment the original thesis.
 
 I would like to thank Professor Wyatt Lloyd for being an incredible advisor throughout this process.
+
+### Notes
+`logTerm` was called `leaderTerm` in earlier versions, but was renamed for clarity.

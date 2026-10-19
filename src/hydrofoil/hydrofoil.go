@@ -33,7 +33,7 @@ type RPC interface {
 	GetSenderId() int32
 	GetTerm() int32
 	GetCommitIndex() int32
-	GetLeaderTerm() int32
+	GetLogTerm() int32
 	GetLogLength() int32
 }
 
@@ -177,7 +177,7 @@ type Replica struct {
 	inLog				Set
 
 	commitIndex			int // index of highest log entry known to be committed
-	leaderTerm			int // highest term seen from a leader
+	logTerm			int // highest term seen from a leader
 	lastApplied			int // index of last log entry applied to state machine
 	lastHeardFromLeader		time.Time // time we last heard from the leader
 
@@ -282,8 +282,8 @@ var emptyCandidateState = CandidateState{
 var emptyBenOrState = BenOrState{
 	benOrRunning: false,
 
-	benOrIteration: 0,
-	benOrPhase: 0,
+	benOrIteration: 1,
+	benOrPhase: 1,
 	benOrStage: NotRunning,
 
 	benOrBroadcastEntry: emptyEntry,
@@ -334,7 +334,7 @@ func newReplicaFullParam(id int, peerAddrList []string, thrifty bool, exec bool,
 		inLog: newSet(),
 
 		commitIndex: 0,
-		leaderTerm: 0,
+		logTerm: 0,
 		lastApplied: 0, // 0 entry is already applied (it's an empty entry)
 		lastHeardFromLeader: time.Now(),
 
@@ -413,7 +413,7 @@ func NewReplicaBenOr(id int, peerAddrList []string, thrifty bool, exec bool, dre
 }
 
 func (r *Replica) getState() (bool, int, int, int) {
-	return r.leaderState.isLeader, r.term, r.leaderTerm, r.commitIndex
+	return r.leaderState.isLeader, r.term, r.logTerm, r.commitIndex
 }
 
 func (r *Replica) executeCommand(i int) {
@@ -776,7 +776,7 @@ func (r *Replica) shouldLogBeReplaced(rpc UpdateMsg, logStartIdx int) (bool, int
 		if i >= len(r.log) || !entryEqual(r.log[i], rpc.GetEntries()[i - firstEntryIndex]) { return true, i }
 	}
 
-	if r.leaderTerm > int(rpc.GetLeaderTerm()) || (r.leaderTerm == int(rpc.GetLeaderTerm()) && len(r.log) >= int(rpc.GetLogLength())) {
+	if r.logTerm > int(rpc.GetLogTerm()) || (r.logTerm == int(rpc.GetLogTerm()) && len(r.log) >= int(rpc.GetLogLength())) {
 		return false, -1
 	}
 
@@ -826,7 +826,7 @@ func (r *Replica) updateLogFromRPC (rpc ReplyMsg) bool {
 	}
 	
 	r.commitIndex = int(rpc.GetCommitIndex())
-	r.leaderTerm = max(r.leaderTerm, int(rpc.GetLeaderTerm()))
+	r.logTerm = max(r.logTerm, int(rpc.GetLogTerm()))
 	if r.commitIndex > oldCommitIndex {
 		// dlog.Println("Replica", r.Id, "committing to", r.commitIndex, "from", oldCommitIndex)
 		// if !r.seenBefore(r.benOrState.benOrBroadcastEntry) {
@@ -893,7 +893,7 @@ func (r *Replica) sendOneGetCommittedData(destId int) {
 	}
 
 	args := &GetCommittedData{
-		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 		StartIndex: int32(r.commitIndex) + 1, Entries: entries, PQEntries: r.pq.extractList(),
 	}
 	r.SendMsg(int32(destId), r.getCommittedDataRPC, args)
@@ -908,7 +908,7 @@ func (r *Replica) sendGetCommittedData() {
 	}
 
 	args := &GetCommittedData{
-		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 		StartIndex: int32(r.commitIndex) + 1, Entries: entries, PQEntries: r.pq.extractList(),
 	}
 	for i := 0; i < r.N; i++ {
@@ -928,7 +928,7 @@ func (r *Replica) handleGetCommittedData(rpc *GetCommittedData) {
 
 	var moreUpToDate bool
 	if r.isLogMoreUpToDate(rpc) != MoreUpToDate {
-		// fmt.Println("huh", r.Id, r.commitIndex, r.leaderTerm, len(r.log), rpc.CommitIndex, rpc.LeaderTerm, rpc.LogLength, rpc.StartIndex, len(rpc.Entries))
+		// fmt.Println("huh", r.Id, r.commitIndex, r.logTerm, len(r.log), rpc.CommitIndex, rpc.LogTerm, rpc.LogLength, rpc.StartIndex, len(rpc.Entries))
 		if r.commitIndex + 1 >= int(rpc.GetStartIndex()) {
 			r.updateLogFromRPC(rpc)
 		} else {
@@ -969,7 +969,7 @@ func (r *Replica) handleGetCommittedData(rpc *GetCommittedData) {
 		}
 
 		args := &GetCommittedDataReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
 		}
 		// dlog.Println("Replica", r.Id, "sending get committed data reply to", rpc.SenderId, "with", r.commitIndex, len(r.log))

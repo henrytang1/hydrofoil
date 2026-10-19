@@ -23,7 +23,7 @@ func (r *Replica) startElection() {
 	r.votedFor = int(r.Id)
 
 	args := &RequestVote{
-		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 	}
 
 	// dlog.Println("Replica", r.Id, "sending to all RequestVote", "AAAA")
@@ -44,9 +44,9 @@ func (r *Replica) handleRequestVote(rpc *RequestVote) {
 		entries = r.log[rpc.CommitIndex + 1:]
 	}
 
-	if r.term > int(rpc.Term) || r.leaderTerm > int(rpc.GetLeaderTerm()) || (r.leaderTerm == int(rpc.GetLeaderTerm()) && len(r.log) > int(rpc.LogLength)) || r.votedFor != -1 {
+	if r.term > int(rpc.Term) || r.logTerm > int(rpc.GetLogTerm()) || (r.logTerm == int(rpc.GetLogTerm()) && len(r.log) > int(rpc.LogLength)) || r.votedFor != -1 {
 		args := &RequestVoteReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			VoteGranted: False, StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
 		}
 		// dlog.Println("Replica", r.Id, "sending to", rpc.SenderId, "RequestVoteReply", "BBBB")
@@ -55,7 +55,7 @@ func (r *Replica) handleRequestVote(rpc *RequestVote) {
 	} else {
 		r.votedFor = int(rpc.SenderId)
 		args := &RequestVoteReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			VoteGranted: True, StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
 		}
 		// dlog.Println("Replica", r.Id, "sending to", rpc.SenderId, "RequestVoteReply", "CCCC")
@@ -108,7 +108,7 @@ func (r *Replica) becomeLeader() {
 	fmt.Println("Replica", r.Id, "becoming the leader for term", r.term)
 
 	r.candidateState = emptyCandidateState
-	r.leaderTerm = r.term
+	r.logTerm = r.term
 
 	for !r.pq.isEmpty() {
 		entry := r.pq.pop()

@@ -23,7 +23,7 @@ func (r *Replica) handleReplicateEntries(rpc *ReplicateEntries) {
 			r.lastHeardFromLeader = time.Now()
 		}
 
-		// dlog.Println("strange", r.Id, r.term, int(rpc.Term), r.isLogMoreUpToDate(rpc), "our data", r.commitIndex, r.leaderTerm, len(r.log), "rpc data", rpc.GetCommitIndex(), rpc.GetLeaderTerm(), rpc.GetLogLength())
+		// dlog.Println("strange", r.Id, r.term, int(rpc.Term), r.isLogMoreUpToDate(rpc), "our data", r.commitIndex, r.logTerm, len(r.log), "rpc data", rpc.GetCommitIndex(), rpc.GetLogTerm(), rpc.GetLogLength())
 
 		entries := make([]Entry, 0)
 		if rpc.CommitIndex + 1 < int32(len(r.log)) {
@@ -32,7 +32,7 @@ func (r *Replica) handleReplicateEntries(rpc *ReplicateEntries) {
 
 		// NewRequestedIndex is not used because the leader will either switch to a follower (because of the term) or ignore this reply (because it has an older LeaderTimestamp)
 		args := &ReplicateEntriesReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(), NewRequestedIndex: int32(r.commitIndex) + 1, 
 			MsgTimestamp: time.Now().UnixNano(),
 		}
@@ -82,7 +82,7 @@ func (r *Replica) handleReplicateEntries(rpc *ReplicateEntries) {
 
 		// NewRequestedIndex is not used because the leader will either switch to a follower (because of the term) or ignore this reply (because it has an older LeaderTimestamp)
 		args := &ReplicateEntriesReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(), NewRequestedIndex: int32(r.commitIndex) + 1,
 			MsgTimestamp: time.Now().UnixNano(), 
 		}
@@ -125,7 +125,7 @@ func (r *Replica) handleReplicateEntries(rpc *ReplicateEntries) {
 	// dlog.Println("Replica", r.Id, "pq values4", r.pq.extractList())
 
 	r.commitIndex = int(rpc.CommitIndex)
-	r.leaderTerm = max(r.leaderTerm, int(rpc.LeaderTerm))
+	r.logTerm = max(r.logTerm, int(rpc.LogTerm))
 	if r.commitIndex > oldCommitIndex {
 		// if !r.seenBefore(r.benOrState.benOrBroadcastEntry) {
 		// 	r.pq.push(r.benOrState.benOrBroadcastEntry)
@@ -149,7 +149,7 @@ func (r *Replica) handleReplicateEntries(rpc *ReplicateEntries) {
 	if !r.benOrState.benOrRunning || r.benOrState.benOrStage == Broadcasting {
 		// dlog.Println("HUH", r.Id, "sending to", rpc.SenderId, rpc.GetStartIndex() + int32(len(rpc.Entries)), logToString(r.pq.extractList()))
 		args := &ReplicateEntriesReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(), NewRequestedIndex: rpc.LogLength,
 			MsgTimestamp: time.Now().UnixNano(),
 		}
@@ -162,7 +162,7 @@ func (r *Replica) handleReplicateEntries(rpc *ReplicateEntries) {
 	} else {
 		// dlog.Println("HUH2", r.Id, "sending to", rpc.SenderId, int32(r.commitIndex) + 1, logToString(r.pq.extractList()))
 		args := &ReplicateEntriesReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(), NewRequestedIndex: int32(r.commitIndex) + 1,
 			MsgTimestamp: time.Now().UnixNano(),
 		}
@@ -191,7 +191,7 @@ func (r *Replica) handleReplicateEntriesReply (rpc *ReplicateEntriesReply) {
 
 	r.leaderState.lastMsgTimestamp[rpc.SenderId] = replyTimestamp
 
-	// dlog.Println("Leader", r.Id, ": ", r.commitIndex, r.leaderTerm, len(r.log), ", Replica", rpc.SenderId, ": ", rpc.CommitIndex, rpc.LeaderTerm, rpc.LogLength, "PQEntries", "[", logToString(rpc.PQEntries), "]")
+	// dlog.Println("Leader", r.Id, ": ", r.commitIndex, r.logTerm, len(r.log), ", Replica", rpc.SenderId, ": ", rpc.CommitIndex, rpc.LogTerm, rpc.LogLength, "PQEntries", "[", logToString(rpc.PQEntries), "]")
 	if r.isLogMoreUpToDate(rpc) == LessUpToDate {
 		r.updateLogFromRPC(rpc)
 	} else {
@@ -234,7 +234,7 @@ func (r *Replica) broadcastReplicateEntries() {
 			prevLogIndex := int32(r.leaderState.repNextIndex[i]) - 1
 
 			args := &ReplicateEntries{
-				SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LeaderTerm: int32(r.leaderTerm), LogLength: int32(len(r.log)),
+				SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 				PrevLogIndex: prevLogIndex, PrevLogServerId: r.log[prevLogIndex].ServerId, PrevLogTimestamp: r.log[prevLogIndex].Timestamp, Entries: r.log[r.leaderState.repNextIndex[i]:],
 			}
 

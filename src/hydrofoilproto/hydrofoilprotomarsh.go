@@ -96,7 +96,7 @@ func (t *ReplicateEntriesReply) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -161,7 +161,7 @@ func (t *ReplicateEntriesReply) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.StartIndex = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	alen1, err := binary.ReadVarint(wire)
@@ -241,7 +241,7 @@ func (t *RequestVote) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -264,7 +264,7 @@ func (t *RequestVote) Unmarshal(wire io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	return nil
 }
@@ -321,7 +321,7 @@ func (t *RequestVoteReply) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -371,7 +371,7 @@ func (t *RequestVoteReply) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.VoteGranted = uint8(bs[20])
 	t.StartIndex = int32((uint32(bs[21]) | (uint32(bs[22]) << 8) | (uint32(bs[23]) << 16) | (uint32(bs[24]) << 24)))
@@ -446,7 +446,7 @@ func (t *BenOrBroadcast) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -503,7 +503,7 @@ func (t *BenOrBroadcast) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.Iteration = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	t.BroadcastEntry.Unmarshal(wire)
@@ -583,7 +583,7 @@ func (t *GetCommittedData) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -632,7 +632,7 @@ func (t *GetCommittedData) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.StartIndex = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	alen1, err := binary.ReadVarint(wire)
@@ -706,7 +706,7 @@ func (t *GetCommittedDataReply) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -755,7 +755,7 @@ func (t *GetCommittedDataReply) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.StartIndex = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	alen1, err := binary.ReadVarint(wire)
@@ -829,7 +829,7 @@ func (t *ReplicateEntries) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -884,7 +884,7 @@ func (t *ReplicateEntries) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.PrevLogIndex = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	t.PrevLogServerId = int32((uint32(bs[24]) | (uint32(bs[25]) << 8) | (uint32(bs[26]) << 16) | (uint32(bs[27]) << 24)))
@@ -952,7 +952,7 @@ func (t *BenOrBroadcastReply) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -1010,7 +1010,7 @@ func (t *BenOrBroadcastReply) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.BenOrMsgValid = uint8(bs[20])
 	t.Iteration = int32((uint32(bs[21]) | (uint32(bs[22]) << 8) | (uint32(bs[23]) << 16) | (uint32(bs[24]) << 24)))
@@ -1091,7 +1091,7 @@ func (t *BenOrConsensus) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -1150,7 +1150,7 @@ func (t *BenOrConsensus) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.Iteration = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	t.Phase = int32((uint32(bs[24]) | (uint32(bs[25]) << 8) | (uint32(bs[26]) << 16) | (uint32(bs[27]) << 24)))
@@ -1230,7 +1230,7 @@ func (t *BenOrConsensusReply) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp32 >> 8)
 	bs[10] = byte(tmp32 >> 16)
 	bs[11] = byte(tmp32 >> 24)
-	tmp32 = t.LeaderTerm
+	tmp32 = t.LogTerm
 	bs[12] = byte(tmp32)
 	bs[13] = byte(tmp32 >> 8)
 	bs[14] = byte(tmp32 >> 16)
@@ -1297,7 +1297,7 @@ func (t *BenOrConsensusReply) Unmarshal(rr io.Reader) error {
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.CommitIndex = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
-	t.LeaderTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.LogTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
 	t.LogLength = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
 	t.BenOrMsgValid = uint8(bs[20])
 	t.Iteration = int32((uint32(bs[21]) | (uint32(bs[22]) << 8) | (uint32(bs[23]) << 16) | (uint32(bs[24]) << 24)))
