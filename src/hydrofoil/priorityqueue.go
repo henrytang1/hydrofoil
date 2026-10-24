@@ -29,7 +29,6 @@ func (extPQ *ExtendedPriorityQueue) push(entry Entry) {
 		return
 	}
 
-	entry.Term = -1
 	entry.Index = -1
 	item := &Item{
 		entry: entry,

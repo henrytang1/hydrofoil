@@ -9,15 +9,15 @@ import (
 /************************************** Election **********************************************/
 
 func (r *Replica) startElection() {
-	// dlog.Println("Replica", r.Id, "starting election")
-
 	timeout := rand.Intn(r.electionTimeout/2) + r.electionTimeout/2
 	setTimer(r.electionTimer, time.Duration(timeout)*time.Millisecond)
+	clearTimer(r.heartbeatTimer)
+	r.leaderState = emptyLeaderState
 
 	r.term++
 	r.candidateState = CandidateState{
 		isCandidate: true,
-		votesReceived: 1,
+		votesGranted: map[int32]bool{r.Id: true},
 	}
 
 	r.votedFor = int(r.Id)
@@ -26,39 +26,36 @@ func (r *Replica) startElection() {
 		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 	}
 
-	// dlog.Println("Replica", r.Id, "sending to all RequestVote", "AAAA")
 	for i := 0; i < r.N; i++ {
 		if i != int(r.Id) {
 			r.SendMsg(int32(i), r.requestVoteRPC, args)
 		}
 	}
+
+	if len(r.candidateState.votesGranted) > r.N/2 {
+		r.becomeLeader()
+	}
 }
 
 
 func (r *Replica) handleRequestVote(rpc *RequestVote) {
-	// dlog.Println("Replica", r.Id, "has term", r.term, "and received a RequestVote RPC from", rpc.SenderId, "with term", rpc.Term)
 	r.handleIncomingTerm(rpc)
 
-	entries := make([]Entry, 0)
-	if rpc.CommitIndex + 1 < int32(len(r.log)) {
-		entries = r.log[rpc.CommitIndex + 1:]
-	}
+	entries := r.copySuffix(int(rpc.CommitIndex) + 1)
 
-	if r.term > int(rpc.Term) || r.logTerm > int(rpc.GetLogTerm()) || (r.logTerm == int(rpc.GetLogTerm()) && len(r.log) > int(rpc.LogLength)) || r.votedFor != -1 {
+	if r.term > int(rpc.Term) || r.logTerm > int(rpc.GetLogTerm()) || (r.logTerm == int(rpc.GetLogTerm()) && len(r.log) > int(rpc.LogLength)) || (r.votedFor != -1 && r.votedFor != int(rpc.SenderId)) {
 		args := &RequestVoteReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), RequestTerm: rpc.Term, CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			VoteGranted: False, StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
 		}
-		// dlog.Println("Replica", r.Id, "sending to", rpc.SenderId, "RequestVoteReply", "BBBB")
 		r.SendMsg(rpc.SenderId, r.requestVoteReplyRPC, args)
 		return
 	} else {
 		r.votedFor = int(rpc.SenderId)
 		args := &RequestVoteReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
+			SenderId: r.Id, Term: int32(r.term), RequestTerm: rpc.Term, CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
 			VoteGranted: True, StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
 		}
-		// dlog.Println("Replica", r.Id, "sending to", rpc.SenderId, "RequestVoteReply", "CCCC")
 		r.SendMsg(rpc.SenderId, r.requestVoteReplyRPC, args)
 
 		timeout := rand.Intn(r.electionTimeout/2) + r.electionTimeout/2
@@ -72,7 +69,7 @@ func (r *Replica) handleRequestVoteReply (rpc *RequestVoteReply) {
 	// if r.term < int(rpc.Term), then you would no longer be the candidate after r.handleIncomingTerm(rpc)
 	r.handleIncomingTerm(rpc)
 
-	if int(rpc.Term) < r.term {
+	if int(rpc.Term) < r.term || int(rpc.RequestTerm) != r.term {
 		return
 	}
 
@@ -80,26 +77,21 @@ func (r *Replica) handleRequestVoteReply (rpc *RequestVoteReply) {
 		return
 	}
 
-	// dlog.Println("Replica", r.Id, "term", r.term, "um1")
+	if !r.updateLogIfPossible(rpc) {
+		r.sendOneGetCommittedData(int(rpc.SenderId))
+		return
+	}
 
-	if r.isLogMoreUpToDate(rpc) == LessUpToDate {
-		r.updateLogFromRPC(rpc)
-
-	} else {
-		for _, v := range(rpc.Entries) {
-			if !r.seenBefore(v) { r.pq.push(v) }
-		}
-
-		for _, v := range(rpc.PQEntries) {
-			if !r.seenBefore(v) { r.pq.push(v) }
-		}
+	// Do not count the grant if updating the log cancelled the campaign
+	if !r.candidateState.isCandidate {
+		return
 	}
 
 	if rpc.VoteGranted == True {
-		r.candidateState.votesReceived++
+		r.candidateState.votesGranted[rpc.SenderId] = true
 	}
 
-	if r.candidateState.votesReceived > r.N/2 {
+	if len(r.candidateState.votesGranted) > r.N/2 {
 		r.becomeLeader()
 	}
 }
@@ -110,28 +102,15 @@ func (r *Replica) becomeLeader() {
 	r.candidateState = emptyCandidateState
 	r.logTerm = r.term
 
-	for !r.pq.isEmpty() {
-		entry := r.pq.pop()
-		entry.Term = int32(r.term)
-		entry.Index = int32(len(r.log))
-
-		if !r.inLog.contains(entry) {
-			r.log = append(r.log, entry)
-			r.inLog.add(entry)
-		}
-	}
-
 	r.leaderState = LeaderState{
 		isLeader: true,
+		version: 1,
 		repNextIndex: make([]int, r.N),
 		repMatchIndex: make([]int, r.N),
-		numEntries: len(r.log),
-		lastMsgTimestamp: make([]time.Time, r.N),
 	}
 
-	for i := 0; i < r.N; i++ {
-		r.leaderState.lastMsgTimestamp[i] = zeroTime
-	}
+	r.appendQueuedEntries()
+	r.leaderState.numEntries = len(r.log)
 
 	for i := 0; i < r.N; i++ {
 		if i != int(r.Id) {
@@ -140,12 +119,8 @@ func (r *Replica) becomeLeader() {
 		}
 	}
 
-	r.leaderState.repNextIndex[r.Id] = len(r.log)
-	r.leaderState.repMatchIndex[r.Id] = len(r.log) - 1
-
 	clearTimer(r.electionTimer)
 	clearTimer(r.benOrStartTimer)
-	clearTimer(r.benOrResendTimer)
 
 	r.sendHeartbeat()
 }

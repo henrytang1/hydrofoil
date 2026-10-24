@@ -128,7 +128,7 @@ func (t *ReplicateEntriesReply) Marshal(wire io.Writer) {
 	for i := int64(0); i < alen2; i++ {
 		t.PQEntries[i].Marshal(wire)
 	}
-	bs = b[:12]
+	bs = b[:21]
 	tmp32 = t.NewRequestedIndex
 	bs[0] = byte(tmp32)
 	bs[1] = byte(tmp32 >> 8)
@@ -143,6 +143,17 @@ func (t *ReplicateEntriesReply) Marshal(wire io.Writer) {
 	bs[9] = byte(tmp64 >> 40)
 	bs[10] = byte(tmp64 >> 48)
 	bs[11] = byte(tmp64 >> 56)
+	tmp32 = t.RequestTerm
+	bs[12] = byte(tmp32)
+	bs[13] = byte(tmp32 >> 8)
+	bs[14] = byte(tmp32 >> 16)
+	bs[15] = byte(tmp32 >> 24)
+	tmp32 = t.Version
+	bs[16] = byte(tmp32)
+	bs[17] = byte(tmp32 >> 8)
+	bs[18] = byte(tmp32 >> 16)
+	bs[19] = byte(tmp32 >> 24)
+	bs[20] = byte(t.Success)
 	wire.Write(bs)
 }
 
@@ -180,12 +191,15 @@ func (t *ReplicateEntriesReply) Unmarshal(rr io.Reader) error {
 	for i := int64(0); i < alen2; i++ {
 		t.PQEntries[i].Unmarshal(wire)
 	}
-	bs = b[:12]
-	if _, err := io.ReadAtLeast(wire, bs, 12); err != nil {
+	bs = b[:21]
+	if _, err := io.ReadAtLeast(wire, bs, 21); err != nil {
 		return err
 	}
 	t.NewRequestedIndex = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.MsgTimestamp = int64((uint64(bs[4]) | (uint64(bs[5]) << 8) | (uint64(bs[6]) << 16) | (uint64(bs[7]) << 24) | (uint64(bs[8]) << 32) | (uint64(bs[9]) << 40) | (uint64(bs[10]) << 48) | (uint64(bs[11]) << 56)))
+	t.RequestTerm = int32((uint32(bs[12]) | (uint32(bs[13]) << 8) | (uint32(bs[14]) << 16) | (uint32(bs[15]) << 24)))
+	t.Version = int32((uint32(bs[16]) | (uint32(bs[17]) << 8) | (uint32(bs[18]) << 16) | (uint32(bs[19]) << 24)))
+	t.Success = uint8(bs[20])
 	return nil
 }
 
@@ -354,6 +368,13 @@ func (t *RequestVoteReply) Marshal(wire io.Writer) {
 	for i := int64(0); i < alen2; i++ {
 		t.PQEntries[i].Marshal(wire)
 	}
+	bs = b[:4]
+	tmp32 = t.RequestTerm
+	bs[0] = byte(tmp32)
+	bs[1] = byte(tmp32 >> 8)
+	bs[2] = byte(tmp32 >> 16)
+	bs[3] = byte(tmp32 >> 24)
+	wire.Write(bs)
 }
 
 func (t *RequestVoteReply) Unmarshal(rr io.Reader) error {
@@ -391,6 +412,11 @@ func (t *RequestVoteReply) Unmarshal(rr io.Reader) error {
 	for i := int64(0); i < alen2; i++ {
 		t.PQEntries[i].Unmarshal(wire)
 	}
+	bs = b[:4]
+	if _, err := io.ReadAtLeast(wire, bs, 4); err != nil {
+		return err
+	}
+	t.RequestTerm = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	return nil
 }
 
@@ -811,9 +837,9 @@ func (p *ReplicateEntriesCache) Put(t *ReplicateEntries) {
 	p.mu.Unlock()
 }
 func (t *ReplicateEntries) Marshal(wire io.Writer) {
-	var b [36]byte
+	var b [44]byte
 	var bs []byte
-	bs = b[:36]
+	bs = b[:44]
 	tmp32 := t.SenderId
 	bs[0] = byte(tmp32)
 	bs[1] = byte(tmp32 >> 8)
@@ -858,6 +884,16 @@ func (t *ReplicateEntries) Marshal(wire io.Writer) {
 	bs[33] = byte(tmp64 >> 40)
 	bs[34] = byte(tmp64 >> 48)
 	bs[35] = byte(tmp64 >> 56)
+	tmp32 = t.PrevLogTerm
+	bs[36] = byte(tmp32)
+	bs[37] = byte(tmp32 >> 8)
+	bs[38] = byte(tmp32 >> 16)
+	bs[39] = byte(tmp32 >> 24)
+	tmp32 = t.PrevLogVersion
+	bs[40] = byte(tmp32)
+	bs[41] = byte(tmp32 >> 8)
+	bs[42] = byte(tmp32 >> 16)
+	bs[43] = byte(tmp32 >> 24)
 	wire.Write(bs)
 	bs = b[:]
 	alen1 := int64(len(t.Entries))
@@ -867,6 +903,13 @@ func (t *ReplicateEntries) Marshal(wire io.Writer) {
 	for i := int64(0); i < alen1; i++ {
 		t.Entries[i].Marshal(wire)
 	}
+	bs = b[:4]
+	tmp32 = t.Version
+	bs[0] = byte(tmp32)
+	bs[1] = byte(tmp32 >> 8)
+	bs[2] = byte(tmp32 >> 16)
+	bs[3] = byte(tmp32 >> 24)
+	wire.Write(bs)
 }
 
 func (t *ReplicateEntries) Unmarshal(rr io.Reader) error {
@@ -875,10 +918,10 @@ func (t *ReplicateEntries) Unmarshal(rr io.Reader) error {
 	if wire, ok = rr.(byteReader); !ok {
 		wire = bufio.NewReader(rr)
 	}
-	var b [36]byte
+	var b [44]byte
 	var bs []byte
-	bs = b[:36]
-	if _, err := io.ReadAtLeast(wire, bs, 36); err != nil {
+	bs = b[:44]
+	if _, err := io.ReadAtLeast(wire, bs, 44); err != nil {
 		return err
 	}
 	t.SenderId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
@@ -889,6 +932,8 @@ func (t *ReplicateEntries) Unmarshal(rr io.Reader) error {
 	t.PrevLogIndex = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	t.PrevLogServerId = int32((uint32(bs[24]) | (uint32(bs[25]) << 8) | (uint32(bs[26]) << 16) | (uint32(bs[27]) << 24)))
 	t.PrevLogTimestamp = int64((uint64(bs[28]) | (uint64(bs[29]) << 8) | (uint64(bs[30]) << 16) | (uint64(bs[31]) << 24) | (uint64(bs[32]) << 32) | (uint64(bs[33]) << 40) | (uint64(bs[34]) << 48) | (uint64(bs[35]) << 56)))
+	t.PrevLogTerm = int32((uint32(bs[36]) | (uint32(bs[37]) << 8) | (uint32(bs[38]) << 16) | (uint32(bs[39]) << 24)))
+	t.PrevLogVersion = int32((uint32(bs[40]) | (uint32(bs[41]) << 8) | (uint32(bs[42]) << 16) | (uint32(bs[43]) << 24)))
 	alen1, err := binary.ReadVarint(wire)
 	if err != nil {
 		return err
@@ -897,6 +942,11 @@ func (t *ReplicateEntries) Unmarshal(rr io.Reader) error {
 	for i := int64(0); i < alen1; i++ {
 		t.Entries[i].Unmarshal(wire)
 	}
+	bs = b[:4]
+	if _, err := io.ReadAtLeast(wire, bs, 4); err != nil {
+		return err
+	}
+	t.Version = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	return nil
 }
 
@@ -1365,10 +1415,10 @@ func (p *EntryCache) Put(t *Entry) {
 	p.mu.Unlock()
 }
 func (t *Entry) Marshal(wire io.Writer) {
-	var b [20]byte
+	var b [24]byte
 	var bs []byte
 	t.Data.Marshal(wire)
-	bs = b[:20]
+	bs = b[:24]
 	tmp32 := t.ServerId
 	bs[0] = byte(tmp32)
 	bs[1] = byte(tmp32 >> 8)
@@ -1393,20 +1443,26 @@ func (t *Entry) Marshal(wire io.Writer) {
 	bs[17] = byte(tmp64 >> 40)
 	bs[18] = byte(tmp64 >> 48)
 	bs[19] = byte(tmp64 >> 56)
+	tmp32 = t.Version
+	bs[20] = byte(tmp32)
+	bs[21] = byte(tmp32 >> 8)
+	bs[22] = byte(tmp32 >> 16)
+	bs[23] = byte(tmp32 >> 24)
 	wire.Write(bs)
 }
 
 func (t *Entry) Unmarshal(wire io.Reader) error {
-	var b [20]byte
+	var b [24]byte
 	var bs []byte
 	t.Data.Unmarshal(wire)
-	bs = b[:20]
-	if _, err := io.ReadAtLeast(wire, bs, 20); err != nil {
+	bs = b[:24]
+	if _, err := io.ReadAtLeast(wire, bs, 24); err != nil {
 		return err
 	}
 	t.ServerId = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
 	t.Term = int32((uint32(bs[4]) | (uint32(bs[5]) << 8) | (uint32(bs[6]) << 16) | (uint32(bs[7]) << 24)))
 	t.Index = int32((uint32(bs[8]) | (uint32(bs[9]) << 8) | (uint32(bs[10]) << 16) | (uint32(bs[11]) << 24)))
 	t.Timestamp = int64((uint64(bs[12]) | (uint64(bs[13]) << 8) | (uint64(bs[14]) << 16) | (uint64(bs[15]) << 24) | (uint64(bs[16]) << 32) | (uint64(bs[17]) << 40) | (uint64(bs[18]) << 48) | (uint64(bs[19]) << 56)))
+	t.Version = int32((uint32(bs[20]) | (uint32(bs[21]) << 8) | (uint32(bs[22]) << 16) | (uint32(bs[23]) << 24)))
 	return nil
 }

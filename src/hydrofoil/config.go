@@ -22,8 +22,8 @@ var CLIENTID uint32 = 0
 func (cfg *config) connect(i int) {
 	for j := 0; j < cfg.n; j++ {
 		if i != j && cfg.connectedToNet[j] {
-			cfg.replicas[i].Connected[j] = true
-			cfg.replicas[j].Connected[i] = true
+			cfg.replicas[i].SetConnected(j, true)
+			cfg.replicas[j].SetConnected(i, true)
 		}
 	}
 	cfg.connectedToNet[i] = true
@@ -33,8 +33,8 @@ func (cfg *config) connect(i int) {
 func (cfg *config) disconnect(i int) {
 	for j := 0; j < cfg.n; j++ {
 		if i != j {
-			cfg.replicas[i].Connected[j] = false
-			cfg.replicas[j].Connected[i] = false
+			cfg.replicas[i].SetConnected(j, false)
+			cfg.replicas[j].SetConnected(i, false)
 		}
 	}
 	cfg.connectedToNet[i] = false
@@ -157,10 +157,7 @@ func (cfg *config) listen() {
 	for data := range cfg.responseChan {
 		replica := data.ServerId
 		cmd := data.Command
-		// dlog.Println("Got execution", cmd.OpId, "from replica", replica, "before append")
 		cfg.repExecutions[replica] = append(cfg.repExecutions[replica], cmd)
-		// dlog.Println("Got execution", cmd.OpId, "from replica", replica, "after append")
-		// idx := len(cfg.repExecutions[replica]) - 1
 	}
 }
 

@@ -15,14 +15,13 @@ const (
     REQUEST_BROADCAST_REPLY
 )
 
-// if Term != -1, then this entry is from the leader
-// if Term == -1, then this entry is running BenOr or has been committed using BenOr+
 type Entry struct {
     Data 	        state.Command
     ServerId        int32
     Term 	        int32
     Index	        int32
     Timestamp       int64
+    Version         int32 // paired with Term to form the stamp (Term <= 0 means a null stamp)
 }
 
 type ReplicateEntries struct {
@@ -35,8 +34,11 @@ type ReplicateEntries struct {
     PrevLogIndex					int32
     PrevLogServerId                 int32
     PrevLogTimestamp                int64
+    PrevLogTerm                     int32 // term of the stamp at PrevLogIndex
+    PrevLogVersion                  int32
 
     Entries							[]Entry
+    Version                         int32 // leader's current version when sending
 }
 
 const (
@@ -69,6 +71,9 @@ type ReplicateEntriesReply struct {
     NewRequestedIndex				int32
 
     MsgTimestamp                    int64
+    RequestTerm                     int32
+    Version                         int32 // copied from the replication request
+    Success                         uint8
 }
 
 func (t *ReplicateEntriesReply) GetSenderId() int32 { return t.SenderId }
@@ -107,6 +112,7 @@ type RequestVoteReply struct {
     StartIndex          			int32 // return entries starting from this index
     Entries     					[]Entry
     PQEntries                       []Entry
+    RequestTerm                     int32 // election term of the request being answered
 }
 
 func (t *RequestVoteReply) GetSenderId() int32 { return t.SenderId }

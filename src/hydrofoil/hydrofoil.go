@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"sort"
 	"state"
+	"sync"
 	"time"
 )
 
@@ -74,151 +75,151 @@ type BenOrConsensusMsg interface {
 }
 
 const ( // for benOrStatus
-	Broadcasting uint8	= 0
-	StageOne	   	= 1
-	StageTwo	   	= 2
-	NotRunning	   	= 3
+	Broadcasting uint8 = 0
+	StageOne           = 1
+	StageTwo           = 2
+	NotRunning         = 3
 )
 
 const (
-	Vote0 uint8 	   	= 0
-	Vote1		   	= 1
-	VoteQuestionMark  	= 2
-	VoteUninitialized 	= 3
+	Vote0             uint8 = 0
+	Vote1                   = 1
+	VoteQuestionMark        = 2
+	VoteUninitialized       = 3
 )
 
 const (
-	False uint8 		= hydrofoilproto.False
-	True        		= hydrofoilproto.True
+	False uint8 = hydrofoilproto.False
+	True        = hydrofoilproto.True
 )
 
 func convertBoolToInteger(b bool) uint8 {
-	if b { return True }
+	if b {
+		return True
+	}
 	return False
 }
 
 func convertIntegerToBool(i uint8) bool {
-	if i == True { return true }
+	if i == True {
+		return true
+	}
 	return false
 }
 
 var zeroTime time.Time
 
-// const INJECT_SLOWDOWN = false
-// const CHAN_BUFFER_SIZE = 200000
-// const MAX_BATCH = 5000
-// const BATCH_INTERVAL = 100 * time.Microsecond
-
 type LeaderState struct {
-	isLeader			bool
-	repNextIndex			[]int // next index to send to each replica
-	repMatchIndex			[]int // index of highest known replicated entry on replica
-	numEntries			int
-	lastMsgTimestamp		[]time.Time // time we last heard a replicateentriesreply from each replica
+	isLeader      bool
+	repNextIndex  []int // next index to send to each replica
+	repMatchIndex []int // index of highest known replicated entry on replica
+	numEntries    int
+	version       int // starts at 1 and increases when existing log entries change
 }
 
 type CandidateState struct {
-	isCandidate			bool
-	votesReceived			int
+	isCandidate  bool
+	votesGranted map[int32]bool
 }
 
 type BenOrState struct {
 	// benOrIndex = commitIndex + 1 at all times!
-	benOrRunning			bool
+	benOrRunning bool
 
-	benOrIteration			int
-	benOrPhase			int
-	benOrStage			uint8
+	benOrIteration int
+	benOrPhase     int
+	benOrStage     uint8
 
-	benOrBroadcastEntry 		Entry // entry that you initially broadcast this iteration
-	benOrBroadcastMsgs		[]Entry
-	heardServerFromBroadcast	[]bool
+	benOrBroadcastEntry      Entry // entry that you initially broadcast this iteration
+	benOrBroadcastMsgs       []Entry
+	heardServerFromBroadcast []bool
 
-	haveMajEntry			bool
-	benOrMajEntry			Entry // majority entry received in BenOrBroadcast. If none, then this is emptyEntry.
+	haveMajEntry  bool
+	benOrMajEntry Entry // majority entry received in BenOrBroadcast. If none, then this is emptyEntry.
 
-	benOrVote			uint8
-	benOrConsensusMsgs		[]uint8
-	heardServerFromConsensus	[]bool
+	benOrVote                uint8
+	benOrConsensusMsgs       []uint8
+	heardServerFromConsensus []bool
 
-	prevPhaseFinalValue		uint8 // final value from previous phase
-	
-	biasedCoin			bool
+	prevPhaseFinalValue uint8 // final value from previous phase
+
 }
 
 type Replica struct {
 	*genericsmr.Replica // extends a generic Paxos replica
 
-	replicateEntriesChan         	chan fastrpc.Serializable
-	replicateEntriesReplyChan	chan fastrpc.Serializable
-	requestVoteChan		        chan fastrpc.Serializable
-	requestVoteReplyChan     	chan fastrpc.Serializable
-	benOrBroadcastChan    		chan fastrpc.Serializable
-	benOrBroadcastReplyChan    	chan fastrpc.Serializable
-	benOrConsensusChan    		chan fastrpc.Serializable
-	benOrConsensusReplyChan   	chan fastrpc.Serializable
-	getCommittedDataChan		chan fastrpc.Serializable
-	getCommittedDataReplyChan	chan fastrpc.Serializable
-	replicateEntriesRPC          	uint8
-	replicateEntriesReplyRPC     	uint8
-	requestVoteRPC           	uint8
-	requestVoteReplyRPC      	uint8
-	benOrBroadcastRPC           	uint8
-	benOrBroadcastReplyRPC      	uint8
-	benOrConsensusRPC      		uint8
-	benOrConsensusReplyRPC     	uint8
-	getCommittedDataRPC		uint8
-	getCommittedDataReplyRPC	uint8
+	replicateEntriesChan      chan fastrpc.Serializable
+	replicateEntriesReplyChan chan fastrpc.Serializable
+	requestVoteChan           chan fastrpc.Serializable
+	requestVoteReplyChan      chan fastrpc.Serializable
+	benOrBroadcastChan        chan fastrpc.Serializable
+	benOrBroadcastReplyChan   chan fastrpc.Serializable
+	benOrConsensusChan        chan fastrpc.Serializable
+	benOrConsensusReplyChan   chan fastrpc.Serializable
+	getCommittedDataChan      chan fastrpc.Serializable
+	getCommittedDataReplyChan chan fastrpc.Serializable
+	replicateEntriesRPC       uint8
+	replicateEntriesReplyRPC  uint8
+	requestVoteRPC            uint8
+	requestVoteReplyRPC       uint8
+	benOrBroadcastRPC         uint8
+	benOrBroadcastReplyRPC    uint8
+	benOrConsensusRPC         uint8
+	benOrConsensusReplyRPC    uint8
+	getCommittedDataRPC       uint8
+	getCommittedDataReplyRPC  uint8
 
-	term				int
-	votedFor			int
-	log				[]Entry
-	pq				ExtendedPriorityQueue // to be fixed
-	inLog				Set
+	term     int
+	votedFor int
+	log      []Entry
+	pq       ExtendedPriorityQueue // to be fixed
+	inLog    Set
 
-	commitIndex			int // index of highest log entry known to be committed
-	logTerm			int // highest term seen from a leader
-	lastApplied			int // index of last log entry applied to state machine
-	lastHeardFromLeader		time.Time // time we last heard from the leader
+	commitIndex         int // index of highest log entry known to be committed
+	logTerm             int // highest term seen from a leader
+	lastApplied         int // index of last log entry applied to state machine
+	clientReplyMu       sync.Mutex
+	clientReplies       map[*bufio.Writer][]func()
+	lastHeardFromLeader time.Time // time we last heard from the leader
 
-	leaderState			LeaderState
-	benOrState			BenOrState
-	candidateState			CandidateState
+	leaderState    LeaderState
+	benOrState     BenOrState
+	candidateState CandidateState
 
-	electionTimeout         	int
-	heartbeatTimeout         	int
-	benOrStartTimeout		int
-	benOrResendTimeout		int
-	// getCommittedTimeout		int // time before we issue another GetCommitData request
+	electionTimeout    int
+	heartbeatTimeout   int
+	benOrStartTimeout  int
+	benOrResendTimeout int
+	benOrWaitTimeout   time.Duration // additional wait after collecting a quorum (zero means no wait)
+	idleTimeout        time.Duration
+	lastEntryTimestamp int64
 
-	clientWriters      		map[uint32]*bufio.Writer
-	heartbeatTimer			*ServerTimer
-	electionTimer			*ServerTimer
-	benOrStartTimer			*ServerTimer
-	benOrResendTimer		*ServerTimer
-	// getCommittedTimer		*ServerTimer
+	clientWriters    map[uint32]*bufio.Writer
+	heartbeatTimer   *ServerTimer
+	electionTimer    *ServerTimer
+	benOrStartTimer  *ServerTimer
+	benOrResendTimer *ServerTimer
+	benOrWaitTimer   *ServerTimer
+	idleTimer        *ServerTimer
 }
-
 
 type Instance struct {
 	cmds   []state.Command
 	ballot int32
 }
 
-//append a log entry to stable storage
+// append a log entry to stable storage
 func (r *Replica) recordInstanceMetadata(inst *Instance) {
 	if !r.Durable {
 		return
 	}
 
-	// var b [5]byte
 	var b [4]byte
 	binary.LittleEndian.PutUint32(b[0:4], uint32(inst.ballot))
-	// b[4] = byte(inst.status)
 	r.StableStore.Write(b[:])
 }
 
-//write a sequence of commands to stable storage
+// write a sequence of commands to stable storage
 func (r *Replica) recordCommands(cmds []state.Command) {
 	if !r.Durable {
 		return
@@ -232,7 +233,7 @@ func (r *Replica) recordCommands(cmds []state.Command) {
 	}
 }
 
-//sync with the stable store
+// sync with the stable store
 func (r *Replica) sync() {
 	if !r.Durable {
 		return
@@ -259,113 +260,105 @@ func (r *Replica) registerClient(clientId uint32, writer *bufio.Writer) uint8 {
 }
 
 var emptyEntry = Entry{
-	Data: state.Command{},
-	ServerId: -1,
-	Term: -1,
-	Index: -1,
+	Data:      state.Command{},
+	ServerId:  -1,
+	Term:      -1,
+	Index:     -1,
 	Timestamp: -1,
 }
 
 var emptyLeaderState = LeaderState{
-	isLeader: false,
-	repNextIndex: make([]int, 0), // replica next index
+	isLeader:      false,
+	repNextIndex:  make([]int, 0), // replica next index
 	repMatchIndex: make([]int, 0),
-	numEntries: 1,
-	lastMsgTimestamp: make([]time.Time, 0),
+	numEntries:    1,
 }
 
 var emptyCandidateState = CandidateState{
 	isCandidate: false,
-	votesReceived: 0,
 }
 
 var emptyBenOrState = BenOrState{
 	benOrRunning: false,
 
 	benOrIteration: 1,
-	benOrPhase: 1,
-	benOrStage: NotRunning,
+	benOrPhase:     1,
+	benOrStage:     NotRunning,
 
-	benOrBroadcastEntry: emptyEntry,
-	benOrBroadcastMsgs: make([]Entry, 0),
+	benOrBroadcastEntry:      emptyEntry,
+	benOrBroadcastMsgs:       make([]Entry, 0),
 	heardServerFromBroadcast: make([]bool, 0),
 
-	haveMajEntry: false,
+	haveMajEntry:  false,
 	benOrMajEntry: emptyEntry,
 
-	benOrVote: VoteUninitialized,
-	benOrConsensusMsgs: make([]uint8, 0),
+	benOrVote:                VoteUninitialized,
+	benOrConsensusMsgs:       make([]uint8, 0),
 	heardServerFromConsensus: make([]bool, 0),
 
 	prevPhaseFinalValue: VoteUninitialized,
-	
-	biasedCoin: false,
 }
 
-func newReplicaFullParam(id int, peerAddrList []string, thrifty bool, exec bool, dreply bool, durable bool, 
+func newReplicaFullParam(id int, peerAddrList []string, thrifty bool, exec bool, dreply bool, durable bool,
 	isProduction bool, electionTimeout int, heartbeatTimeout int, benOrStartTimeout int, benOrResendTimeout int) *Replica {
 	r := &Replica{
-		Replica: genericsmr.NewReplica(id, peerAddrList, thrifty, exec, dreply),
-		replicateEntriesChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		Replica:                   genericsmr.NewReplica(id, peerAddrList, thrifty, exec, dreply),
+		replicateEntriesChan:      make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
 		replicateEntriesReplyChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		requestVoteChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		requestVoteReplyChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		benOrBroadcastChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		benOrBroadcastReplyChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		benOrConsensusChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		benOrConsensusReplyChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		getCommittedDataChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		requestVoteChan:           make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		requestVoteReplyChan:      make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		benOrBroadcastChan:        make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		benOrBroadcastReplyChan:   make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		benOrConsensusChan:        make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		benOrConsensusReplyChan:   make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
+		getCommittedDataChan:      make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
 		getCommittedDataReplyChan: make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
-		replicateEntriesRPC: 0,
-		replicateEntriesReplyRPC: 0, 
-		requestVoteRPC: 0,
-		requestVoteReplyRPC: 0,
-		benOrBroadcastRPC: 0,
-		benOrBroadcastReplyRPC: 0,
-		benOrConsensusRPC: 0,
-		benOrConsensusReplyRPC: 0,
-		getCommittedDataRPC: 0,
-		getCommittedDataReplyRPC: 0,
+		replicateEntriesRPC:       0,
+		replicateEntriesReplyRPC:  0,
+		requestVoteRPC:            0,
+		requestVoteReplyRPC:       0,
+		benOrBroadcastRPC:         0,
+		benOrBroadcastReplyRPC:    0,
+		benOrConsensusRPC:         0,
+		benOrConsensusReplyRPC:    0,
+		getCommittedDataRPC:       0,
+		getCommittedDataReplyRPC:  0,
 
-		term: 0,
+		term:     0,
 		votedFor: -1,
-		log: []Entry{emptyEntry},
-		pq: newExtendedPriorityQueue(),
-		inLog: newSet(),
+		log:      []Entry{emptyEntry},
+		pq:       newExtendedPriorityQueue(),
+		inLog:    newSet(),
 
-		commitIndex: 0,
-		logTerm: 0,
-		lastApplied: 0, // 0 entry is already applied (it's an empty entry)
+		commitIndex:         0,
+		logTerm:             0,
+		lastApplied:         0, // 0 entry is already applied (it's an empty entry)
 		lastHeardFromLeader: time.Now(),
 
-		leaderState: emptyLeaderState,
-		benOrState: emptyBenOrState,
+		leaderState:    emptyLeaderState,
+		benOrState:     emptyBenOrState,
 		candidateState: emptyCandidateState,
 
-		// recentlySentGetCommit: false,
-		// proposals: make(map[uint32]*genericsmr.Propose),
-
-		electionTimeout: electionTimeout,
-		heartbeatTimeout: heartbeatTimeout,
-		benOrStartTimeout: benOrStartTimeout,
+		electionTimeout:    electionTimeout,
+		heartbeatTimeout:   heartbeatTimeout,
+		benOrStartTimeout:  benOrStartTimeout,
 		benOrResendTimeout: benOrResendTimeout,
-		// getCommittedTimeout: getCommittedTimeout,
+		idleTimeout:        time.Duration(benOrStartTimeout) * time.Millisecond,
 
-		clientWriters: make(map[uint32]*bufio.Writer),
-		heartbeatTimer: newTimer(),
-		electionTimer: newTimer(),
-		benOrStartTimer: newTimer(),
+		clientWriters:    make(map[uint32]*bufio.Writer),
+		heartbeatTimer:   newTimer(),
+		electionTimer:    newTimer(),
+		benOrStartTimer:  newTimer(),
 		benOrResendTimer: newTimer(),
-		// getCommittedTimer: newTimer(),
+		benOrWaitTimer:   newTimer(),
+		idleTimer:        newTimer(),
 	}
 
 	r.Durable = durable
 	r.TestingState.IsProduction = isProduction
-	// r.TestingState.IsConnected.Mu.Lock()
 	for i := 0; i < r.N; i++ {
-		r.Connected[i] = false
+		r.SetConnected(i, false)
 	}
-	// r.TestingState.IsConnected.Mu.Unlock()
 
 	r.replicateEntriesRPC = r.RegisterRPC(new(ReplicateEntries), r.replicateEntriesChan)
 	r.replicateEntriesReplyRPC = r.RegisterRPC(new(ReplicateEntriesReply), r.replicateEntriesReplyChan)
@@ -381,8 +374,6 @@ func newReplicaFullParam(id int, peerAddrList []string, thrifty bool, exec bool,
 	if r.TestingState.IsProduction {
 		go r.run()
 	}
-
-	// dlog.Println("Replica", r.Id)
 
 	return r
 }
@@ -416,22 +407,53 @@ func (r *Replica) getState() (bool, int, int, int) {
 	return r.leaderState.isLeader, r.term, r.logTerm, r.commitIndex
 }
 
+// Send replies in order on each client connection without blocking the replica
+func (r *Replica) sendClientReply(writer *bufio.Writer, send func()) {
+	r.clientReplyMu.Lock()
+	if r.clientReplies == nil {
+		r.clientReplies = make(map[*bufio.Writer][]func())
+	}
+	r.clientReplies[writer] = append(r.clientReplies[writer], send)
+	start := len(r.clientReplies[writer]) == 1
+	r.clientReplyMu.Unlock()
+	if !start {
+		return
+	}
+	go func() {
+		for {
+			r.clientReplyMu.Lock()
+			send := r.clientReplies[writer][0]
+			r.clientReplyMu.Unlock()
+			send()
+			r.clientReplyMu.Lock()
+			pending := r.clientReplies[writer]
+			pending[0] = nil
+			r.clientReplies[writer] = pending[1:]
+			empty := len(r.clientReplies[writer]) == 0
+			if empty {
+				delete(r.clientReplies, writer)
+			}
+			r.clientReplyMu.Unlock()
+			if empty {
+				return
+			}
+		}
+	}()
+}
+
 func (r *Replica) executeCommand(i int) {
 	if r.TestingState.IsProduction {
 		val := r.log[i].Data.Execute(r.State)
-		// fmt.Println(r.log[i].ServerId, r.Id, i)
-		// if r.log[i].ServerId == r.Id {
-			if writer, ok := r.clientWriters[r.log[i].Data.ClientId]; ok {
-				propreply := &genericsmrproto.ProposeReplyTS{
-					OK: True,
-					CommandId: r.log[i].Data.OpId,
-					Value: val,
-					Timestamp: r.log[i].Timestamp}
-				r.ReplyProposeTS(propreply, writer)
-			}
+		if writer, ok := r.clientWriters[r.log[i].Data.ClientId]; ok {
+			propreply := &genericsmrproto.ProposeReplyTS{
+				OK:        True,
+				CommandId: r.log[i].Data.OpId,
+				Value:     val,
+				Timestamp: r.log[i].Timestamp}
+			r.sendClientReply(writer, func() { r.ReplyProposeTS(propreply, writer) })
+		}
 	} else {
 		r.TestingState.ResponseChan <- genericsmr.RepCommand{int(r.Id), r.log[i].Data}
-		// dlog.Println("Replica", r.Id, "executing command", i, "with opid", r.log[i].Data.OpId, "END")
 	}
 }
 
@@ -440,239 +462,173 @@ func (r *Replica) runReplica() {
 }
 
 func (r *Replica) executeCommands() {
-	for !r.Shutdown {
-		executed := false
-		if r.commitIndex > r.lastApplied {
-			// dlog.Println("Replica", r.Id, "executing from", r.lastApplied + 1, "to", r.commitIndex, "log is: ", logToString(r.log))
-		}
+	// Execution of the leader's state machine
+	for r.lastApplied < r.commitIndex {
+		r.lastApplied++
+		r.executeCommand(r.lastApplied)
+	}
+}
 
-		// Execution of the leader's state machine
-		for i := r.lastApplied + 1; i <= r.commitIndex; i++ {
-			r.executeCommand(i)
-			executed = true
-		}
-		r.lastApplied = r.commitIndex
+func (r *Replica) advanceLeaderCommit() {
+	if !r.leaderState.isLeader || (r.benOrState.benOrRunning && r.benOrState.benOrStage != Broadcasting) {
+		return
+	}
 
-		if !executed {
-			time.Sleep(1000)
-		}
+	matchIndices := append(make([]int, 0, r.N), r.leaderState.repMatchIndex...)
+	sort.Sort(sort.Reverse(sort.IntSlice(matchIndices)))
+	if r.commitIndex < matchIndices[r.N/2] {
+		r.commitIndex = matchIndices[r.N/2]
+		r.resetBenOr()
 	}
 }
 
 /* Main event processing loop */
 func (r *Replica) run() {
-	if (r.TestingState.IsProduction) { 
+	if r.TestingState.IsProduction {
 		r.ConnectToPeers()
-
-		// dlog.Println("Waiting for client connections")
 
 		go r.WaitForClientConnections()
 	}
 
-	go r.executeCommands()
-
 	var timeout int
 	timeout = rand.Intn(r.electionTimeout/2) + r.electionTimeout/2
-	setTimer(r.electionTimer, time.Duration(timeout) * time.Millisecond)
-	
+	setTimer(r.electionTimer, time.Duration(timeout)*time.Millisecond)
+
 	timeout = rand.Intn(r.benOrStartTimeout/2) + r.benOrStartTimeout/2
-	setTimer(r.benOrStartTimer, time.Duration(timeout) * time.Millisecond)
+	setTimer(r.benOrStartTimer, time.Duration(timeout)*time.Millisecond)
+	setTimer(r.idleTimer, r.idleTimeout)
 
-	// idx := 0
-	// times := make([]int64, 10)
 	for !r.Shutdown {
-		// timesss := time.Now().UnixMicro()
 		if r.leaderState.isLeader {
-			matchIndices := append(make([]int, 0, r.N), r.leaderState.repMatchIndex...)
-			sort.Sort(sort.Reverse(sort.IntSlice(matchIndices)))
-			// dlog.Println("Replica", r.Id, "matchIndices", matchIndices)
-			if r.commitIndex < matchIndices[r.N/2] && (!r.benOrState.benOrRunning || r.log[matchIndices[r.N/2]] == r.benOrState.benOrMajEntry) {
-				// dlog.Println("Leader", r.Id, "committing using RAFT from", r.commitIndex + 1, "to", matchIndices[r.N/2])
-				r.commitIndex = matchIndices[r.N/2]
-				r.benOrState = emptyBenOrState
-				// timeout := rand.Intn(r.benOrStartTimeout/2) + r.benOrStartTimeout/2
-				// setTimer(r.benOrStartTimer, time.Duration(timeout)*time.Millisecond)
-				clearTimer(r.benOrResendTimer)
-			}
-
+			r.advanceLeaderCommit()
 			if len(r.log) > r.leaderState.numEntries {
 				r.leaderState.numEntries = len(r.log)
 				r.sendHeartbeat()
 			}
-		} else if !r.benOrState.benOrRunning && time.Since(r.lastHeardFromLeader) > time.Duration(3 * r.benOrStartTimeout)*time.Millisecond &&
-			(r.commitIndex + 1 < len(r.log) || !r.pq.isEmpty()) {
+		} else if !r.benOrState.benOrRunning && time.Since(r.lastHeardFromLeader) > time.Duration(3*r.benOrStartTimeout)*time.Millisecond &&
+			(r.commitIndex+1 < len(r.log) || !r.pq.isEmpty()) {
 			r.startBenOrPlus()
 		}
 
+		r.executeCommands()
 		select {
-			case client := <-r.RegisterClientIdChan:
-				fmt.Printf("Client %d registering\n", client.ClientId)
-				r.registerClient(client.ClientId, client.Reply)
+		case client := <-r.RegisterClientIdChan:
+			fmt.Printf("Client %d registering\n", client.ClientId)
+			r.registerClient(client.ClientId, client.Reply)
 
-			case cmd := <-r.TestingState.RequestChan:
-				// dlog.Printf("Replica %d received testing command with op %d\n", r.Id, cmd.OpId)
-				r.handleProposeCommand(cmd)
+		case cmd := <-r.TestingState.RequestChan:
+			r.handleProposeCommand(cmd)
 
-			// case <-clockChan:
-			// 	//activate the new proposals channel
-			// 	onOffProposeChan = r.ProposeChan
-			// 	break
+		case propose := <-r.ProposeChan:
+			//got a Propose from a client
+			dlog.Printf("Replica %d received proposal with op %d\n", r.Id, propose.Command.Op)
+			r.handlePropose(propose)
 
-			case propose := <-r.ProposeChan:
-				//got a Propose from a client
-				// startTime := time.Now()
-				dlog.Printf("Replica %d received proposal with op %d\n", r.Id, propose.Command.Op)
-				r.handlePropose(propose)
-				// fmt.Println("Propose took", time.Since(startTime))
-				//deactivate the new proposals channel to prioritize the handling of protocol messages
-				// if MAX_BATCH > 100 {
-				// 	onOffProposeChan = nil
-				// }
+		case getState := <-r.GetStateChan:
+			//got a GetState request from a client
+			r.handleGetState(getState)
 
-			case getState := <-r.GetStateChan:
-				//got a GetState request from a client
-				// dlog.Printf("Replica %d received GetState from client\n", r.Id)
-				r.handleGetState(getState)
-			
-			case slowdown := <-r.SlowdownChan:
-				//got a Slowdown request from a client
-				// dlog.Printf("Replica %d received Slowdown from client\n", r.Id)
-				r.handleSlowdown(slowdown)
-			
-			case connect := <-r.ConnectChan:
-				//got a Connect request from a client
-				// dlog.Printf("Replica %d received Connect from client\n", r.Id)
-				r.handleConnect(connect)
-			
-			case disconnect := <-r.DisconnectChan:
-				//got a Disconnect request from a client
-				dlog.Printf("Replica %d received Disconnect from client\n", r.Id)
-				r.handleDisconnect(disconnect)
+		case slowdown := <-r.SlowdownChan:
+			//got a Slowdown request from a client
+			r.handleSlowdown(slowdown)
 
-			case replicateEntriesS := <-r.replicateEntriesChan:
-				// startTime := time.Now().UnixMicro()
-				replicateEntries := replicateEntriesS.(*ReplicateEntries)
-				//got a ReplicateEntries message
-				// dlog.Printf("Replica %d received ReplicateEntries from replica %d, for term %d with log up to idx %d\n", r.Id, replicateEntries.SenderId, replicateEntries.Term, int(replicateEntries.PrevLogIndex) + len(replicateEntries.Entries))
-				r.handleReplicateEntries(replicateEntries)
-				// fmt.Println("ReplicateEntries took", time.Now().UnixMicro() - startTime, "microseconds")
+		case connect := <-r.ConnectChan:
+			//got a Connect request from a client
+			r.handleConnect(connect)
 
-			case replicateEntriesReplyS := <-r.replicateEntriesReplyChan:
-				// startTime := time.Now().UnixMicro()
-				replicateEntriesReply := replicateEntriesReplyS.(*ReplicateEntriesReply)
-				//got a ReplicateEntriesReply message
-				// dlog.Printf("Replica %d received ReplicateEntriesReply from replica %d, for term %d\n", r.Id, replicateEntriesReply.SenderId, replicateEntriesReply.Term)
-				r.handleReplicateEntriesReply(replicateEntriesReply)
-				// fmt.Println("ReplicateEntriesReply took", time.Now().UnixMicro() - startTime, "microseconds")
+		case disconnect := <-r.DisconnectChan:
+			//got a Disconnect request from a client
+			dlog.Printf("Replica %d received Disconnect from client\n", r.Id)
+			r.handleDisconnect(disconnect)
 
-			case requestVoteS := <-r.requestVoteChan:
-				// startTime := time.Now().UnixMicro()
-				requestVote := requestVoteS.(*RequestVote)
-				//got a RequestVote message
-				// dlog.Printf("Replica %d received RequestVote from replica %d, for term %d\n", r.Id, requestVote.SenderId, requestVote.Term)
-				r.handleRequestVote(requestVote)
-				// fmt.Println("RequestVote took", time.Now().UnixMicro() - startTime, "microseconds")
+		case replicateEntriesS := <-r.replicateEntriesChan:
+			replicateEntries := replicateEntriesS.(*ReplicateEntries)
+			//got a ReplicateEntries message
+			r.handleReplicateEntries(replicateEntries)
 
-			case requestVoteReplyS := <-r.requestVoteReplyChan:
-				// startTime := time.Now().UnixMicro()
-				requestVoteReply := requestVoteReplyS.(*RequestVoteReply)
-				//got a RequestVoteReply message
-				// dlog.Printf("Replica %d received RequestVoteReply from replica %d, for term %d\n", r.Id, requestVoteReply.SenderId, requestVoteReply.Term)
-				r.handleRequestVoteReply(requestVoteReply)
-				// fmt.Println("RequestVoteReply took", time.Now().UnixMicro() - startTime, "microseconds")
+		case replicateEntriesReplyS := <-r.replicateEntriesReplyChan:
+			replicateEntriesReply := replicateEntriesReplyS.(*ReplicateEntriesReply)
+			//got a ReplicateEntriesReply message
+			r.handleReplicateEntriesReply(replicateEntriesReply)
 
-			case benOrBroadcastS := <-r.benOrBroadcastChan:
-				// startTime := time.Now().UnixMicro()
-				benOrBroadcast := benOrBroadcastS.(*BenOrBroadcast)
-				//got a BenOrBroadcast message
-				// dlog.Printf("Replica %d received BenOrBroadcast from replica %d, for term %d and index %d\n", r.Id, benOrBroadcast.SenderId, benOrBroadcast.Term, benOrBroadcast.CommitIndex+1)
-				// debug.PrintStack()
-				r.handleBenOrBroadcast(benOrBroadcast)
-				// fmt.Println("BenOrBroadcast from replica", benOrBroadcast.SenderId, "for index", benOrBroadcast.CommitIndex+1, "took", time.Now().UnixMicro() - startTime, "microseconds")
-				// fmt.Println("BenOrBroadcast took", time.Now().UnixMicro() - startTime, "microseconds")
+		case requestVoteS := <-r.requestVoteChan:
+			requestVote := requestVoteS.(*RequestVote)
+			//got a RequestVote message
+			r.handleRequestVote(requestVote)
 
-			case benOrBroadcastReplyS := <-r.benOrBroadcastReplyChan:
-				// startTime := time.Now().UnixMicro()
-				benOrBroadcastReply := benOrBroadcastReplyS.(*BenOrBroadcastReply)
-				//got a BenOrBroadcastReply message
-				// dlog.Printf("Replica %d received BenOrBroadcastReply from replica %d, for term %d and index %d and validity %d\n", r.Id, benOrBroadcastReply.SenderId, benOrBroadcastReply.Term, benOrBroadcastReply.CommitIndex+1, benOrBroadcastReply.BenOrMsgValid)
-				r.handleBenOrBroadcast(benOrBroadcastReply)
-				// fmt.Println("BenOrBroadcastReply from replica", benOrBroadcastReply.SenderId, "for index", benOrBroadcastReply.CommitIndex+1, "took", time.Now().UnixMicro() - startTime, "microseconds")
-				// fmt.Println("BenOrBroadcastReply took", time.Now().UnixMicro() - startTime, "microseconds")
+		case requestVoteReplyS := <-r.requestVoteReplyChan:
+			requestVoteReply := requestVoteReplyS.(*RequestVoteReply)
+			//got a RequestVoteReply message
+			r.handleRequestVoteReply(requestVoteReply)
 
-			case benOrConsensusS := <-r.benOrConsensusChan:
-				// startTime := time.Now().UnixMicro()
-				benOrConsensus := benOrConsensusS.(*BenOrConsensus)
-				//got a BenOrConsensus message
-				// dlog.Printf("Replica %d received BenOrConsensus from replica %d, for term %d with vote %d\n", r.Id, benOrConsensus.SenderId, benOrConsensus.Term, benOrConsensus.Vote)
-				r.handleBenOrConsensus(benOrConsensus)
-				// fmt.Println("BenOrBroadcastConsensus Stage", benOrConsensus.Stage, "from replica", benOrConsensus.SenderId, "for index", benOrConsensus.CommitIndex+1, "took", time.Now().UnixMicro() - startTime, "microseconds")
-				// fmt.Println("BenOrConsensus took", time.Now().UnixMicro() - startTime, "microseconds")
+		case benOrBroadcastS := <-r.benOrBroadcastChan:
+			benOrBroadcast := benOrBroadcastS.(*BenOrBroadcast)
+			//got a BenOrBroadcast message
+			r.handleBenOrBroadcast(benOrBroadcast)
 
-			case benOrConsensusReplyS := <-r.benOrConsensusReplyChan:
-				// startTime := time.Now().UnixMicro()
-				benOrConsensusReply := benOrConsensusReplyS.(*BenOrConsensusReply)
-				//got a BenOrConsensusReply message
-				// dlog.Printf("Replica %d received BenOrConsensusReply from replica %d, for term %d with vote %d and validity %d\n", r.Id, benOrConsensusReply.SenderId, benOrConsensusReply.Term, benOrConsensusReply.Vote, benOrConsensusReply.BenOrMsgValid)
-				r.handleBenOrConsensus(benOrConsensusReply)
-				// fmt.Println("BenOrBroadcastConsensusReply Stage", benOrConsensusReply.Stage, "from replica", benOrConsensusReply.SenderId, "for index", benOrConsensusReply.CommitIndex+1, "took", time.Now().UnixMicro() - startTime, "microseconds")
-				// fmt.Println("BenOrConsensusReply took", time.Now().UnixMicro() - startTime, "microseconds")
+		case benOrBroadcastReplyS := <-r.benOrBroadcastReplyChan:
+			benOrBroadcastReply := benOrBroadcastReplyS.(*BenOrBroadcastReply)
+			//got a BenOrBroadcastReply message
+			r.handleBenOrBroadcast(benOrBroadcastReply)
 
-			case getCommittedDataS := <-r.getCommittedDataChan:
-				// startTime := time.Now().UnixMicro()
-				getCommittedData := getCommittedDataS.(*GetCommittedData)
-				//got a GetCommittedData message
-				// dlog.Printf("Replica %d received GetCommittedData from replica %d\n", r.Id, getCommittedData.SenderId)
-				r.handleGetCommittedData(getCommittedData)
-				// fmt.Println("GetCommittedData from replica", getCommittedData.SenderId, "took", time.Now().UnixMicro() - startTime, "microseconds")
-				// fmt.Println("GetCommittedData took", time.Now().UnixMicro() - startTime, "microseconds")
-			
-			case getCommittedDataReplyS := <-r.getCommittedDataReplyChan:
-				// startTime := time.Now().UnixMicro()
-				getCommittedDataReply := getCommittedDataReplyS.(*GetCommittedDataReply)
-				//got a GetCommittedData message
-				// dlog.Printf("Replica %d received GetCommittedDataReply from replica %d\n", r.Id, getCommittedDataReply.SenderId)
-				r.handleGetCommittedDataReply(getCommittedDataReply)
-				// fmt.Println("GetCommittedDataReply from replica", getCommittedDataReply.SenderId, "took", time.Now().UnixMicro() - startTime, "microseconds")
-				// fmt.Println("GetCommittedDataReply took", time.Now().UnixMicro() - startTime, "microseconds")
-			
-			case <- r.heartbeatTimer.timer.C:
-				// startTime := time.Now().UnixMicro()
-				r.heartbeatTimer.active = false
-				//got a heartbeat timeout
-				r.sendHeartbeat()
-				// fmt.Println("Heartbeat took", time.Now().UnixMicro() - startTime, "microseconds")
-			
-			case <- r.electionTimer.timer.C:
-				// startTime := time.Now().UnixMicro()
-				r.electionTimer.active = false
-				//got an election timeout
-				r.startElection()
-				// fmt.Println("Election took", time.Now().UnixMicro() - startTime, "microseconds")
-			
-			case <- r.benOrStartTimer.timer.C:
-				// startTime := time.Now().UnixMicro()
-				r.benOrStartTimer.active = false
-				//got a benOrStartWait timeout
-				r.startBenOrPlus()
-				// fmt.Println("BenOrStartWait took", time.Now().UnixMicro() - startTime, "microseconds")
+		case benOrConsensusS := <-r.benOrConsensusChan:
+			benOrConsensus := benOrConsensusS.(*BenOrConsensus)
+			//got a BenOrConsensus message
+			r.handleBenOrConsensus(benOrConsensus)
 
-			case <- r.benOrResendTimer.timer.C:
-				// startTime := time.Now().UnixMicro()
-				// dlog.Println("Replica", r.Id, "got a benOrResend timeout")
-				r.benOrResendTimer.active = false
-				//got a benOrResend timeout
-				r.resendBenOrTimer()
-				// fmt.Println("BenOrResend took", time.Now().UnixMicro() - startTime, "microseconds")
+		case benOrConsensusReplyS := <-r.benOrConsensusReplyChan:
+			benOrConsensusReply := benOrConsensusReplyS.(*BenOrConsensusReply)
+			//got a BenOrConsensusReply message
+			r.handleBenOrConsensus(benOrConsensusReply)
+
+		case getCommittedDataS := <-r.getCommittedDataChan:
+			getCommittedData := getCommittedDataS.(*GetCommittedData)
+			//got a GetCommittedData message
+			r.handleGetCommittedData(getCommittedData)
+
+		case getCommittedDataReplyS := <-r.getCommittedDataReplyChan:
+			getCommittedDataReply := getCommittedDataReplyS.(*GetCommittedDataReply)
+			//got a GetCommittedData message
+			r.handleGetCommittedDataReply(getCommittedDataReply)
+
+		case <-r.heartbeatTimer.timer.C:
+			r.heartbeatTimer.active = false
+			//got a heartbeat timeout
+			r.sendHeartbeat()
+
+		case <-r.electionTimer.timer.C:
+			r.electionTimer.active = false
+			//got an election timeout
+			r.startElection()
+
+		case <-r.benOrStartTimer.timer.C:
+			r.benOrStartTimer.active = false
+			//got a benOrStartWait timeout
+			r.startBenOrPlus()
+
+		case <-r.benOrWaitTimer.timer.C:
+			r.benOrWaitTimer.active = false
+			r.advanceBenOr()
+		case <-r.idleTimer.timer.C:
+			r.idleTimer.active = false
+			if !r.leaderState.isLeader && !r.benOrState.benOrRunning {
+				r.sendGetCommittedData()
+			} else {
+				setTimer(r.idleTimer, r.idleTimeout)
+			}
+		case <-r.benOrResendTimer.timer.C:
+			r.benOrResendTimer.active = false
+			//got a benOrResend timeout
+			r.resendBenOrTimer()
 		}
 	}
-
-	// dlog.Println("Replica", r.Id, "exiting main loop")
 
 	clearTimer(r.heartbeatTimer)
 	clearTimer(r.electionTimer)
 	clearTimer(r.benOrStartTimer)
 	clearTimer(r.benOrResendTimer)
+	clearTimer(r.benOrWaitTimer)
+	clearTimer(r.idleTimer)
 }
 
 func (r *Replica) sendHeartbeat() {
@@ -682,33 +638,31 @@ func (r *Replica) sendHeartbeat() {
 	if !r.leaderState.isLeader {
 		log.Fatal("Replica", r.Id, "is not leader, but sending heartbeat")
 	}
-	
-	// dlog.Printf("Replica %d sending heartbeat\n", r.Id)
+
 	r.broadcastReplicateEntries()
-	// else {
-	// 	r.broadcastInfo()
-	// }
 }
 
 func (r *Replica) shutdown() {
 	r.Shutdown = true
 }
 
-// func (r *Replica) clearGetCommittedTimer() {
-// 	clearTimer(r.getCommittedTimer)
-// }
-
 func (r *Replica) handleProposeCommand(cmd state.Command) {
-	newLogEntry := Entry{
-		Data: cmd,
-		ServerId: r.Id,
-		Term: -1,
-		Index: -1,
-		Timestamp: time.Now().UnixNano(),
+	timestamp := time.Now().UnixNano()
+	if timestamp <= r.lastEntryTimestamp {
+		timestamp = r.lastEntryTimestamp + 1
 	}
-	
+	r.lastEntryTimestamp = timestamp
+	newLogEntry := Entry{
+		Data:      cmd,
+		ServerId:  r.Id,
+		Term:      -1,
+		Index:     -1,
+		Timestamp: timestamp,
+	}
+
 	if r.leaderState.isLeader {
 		newLogEntry.Term = int32(r.term)
+		newLogEntry.Version = int32(r.leaderState.version)
 		newLogEntry.Index = int32(len(r.log))
 		r.inLog.add(newLogEntry)
 		r.log = append(r.log, newLogEntry)
@@ -719,13 +673,10 @@ func (r *Replica) handleProposeCommand(cmd state.Command) {
 	} else {
 		r.pq.push(newLogEntry)
 		r.sendGetCommittedData()
-		// dlog.Println(newLogEntry)
-		// dlog.Println(r.pq.extractList())
 	}
 }
 
 func (r *Replica) handlePropose(propose *genericsmr.Propose) {
-	// r.proposals[propose.Command.ClientId] = propose
 	r.handleProposeCommand(propose.Command)
 }
 
@@ -733,163 +684,215 @@ func (r *Replica) handleGetState(getState *genericsmr.GetState) {
 	args := &genericsmrproto.GetStateReply{
 		IsLeader: convertBoolToInteger(r.leaderState.isLeader),
 	}
-	r.ReplyGetState(args, getState.Reply)
+	r.sendClientReply(getState.Reply, func() { r.ReplyGetState(args, getState.Reply) })
 }
 
 func (r *Replica) handleSlowdown(slowdown *genericsmr.Slowdown) {
 	args := &genericsmrproto.SlowdownReply{
 		Success: 1,
 	}
-	r.ReplySlowdown(args, slowdown.Reply)
+	r.sendClientReply(slowdown.Reply, func() { r.ReplySlowdown(args, slowdown.Reply) })
 	time.Sleep(time.Duration(slowdown.TimeInMs) * time.Millisecond)
 }
 
 func (r *Replica) handleConnect(connect *genericsmr.Connect) {
 	for i := 0; i < r.N; i++ {
 		if int32(i) != r.Id {
-			r.Connected[i] = true
+			r.SetConnected(i, true)
 		}
 	}
 
 	args := &genericsmrproto.ConnectReply{
 		Success: 1,
 	}
-	r.ReplyConnect(args, connect.Reply)
+	r.sendClientReply(connect.Reply, func() { r.ReplyConnect(args, connect.Reply) })
 }
 
 func (r *Replica) handleDisconnect(disconnect *genericsmr.Disconnect) {
 	for i := 0; i < r.N; i++ {
 		if int32(i) != r.Id {
-			r.Connected[i] = false
+			r.SetConnected(i, false)
 		}
 	}
 	args := &genericsmrproto.DisconnectReply{
 		Success: 1,
 	}
-	r.ReplyDisconnect(args, disconnect.Reply)
+	r.sendClientReply(disconnect.Reply, func() { r.ReplyDisconnect(args, disconnect.Reply) })
 }
 
-func (r *Replica) shouldLogBeReplaced(rpc UpdateMsg, logStartIdx int) (bool, int) { // should you replace, and if you should, the first index to start replacing
-	firstEntryIndex := int(rpc.GetStartIndex())
+func stampValid(e Entry) bool   { return e.Term > 0 }
+func sameStamp(a, b Entry) bool { return a.Term == b.Term && a.Version == b.Version }
 
-	for i := logStartIdx; i <= int(rpc.GetCommitIndex()); i++ {
-		if i >= len(r.log) || !entryEqual(r.log[i], rpc.GetEntries()[i - firstEntryIndex]) { return true, i }
+func (r *Replica) cancelCampaign() {
+	if r.candidateState.isCandidate {
+		r.candidateState = emptyCandidateState
 	}
-
-	if r.logTerm > int(rpc.GetLogTerm()) || (r.logTerm == int(rpc.GetLogTerm()) && len(r.log) >= int(rpc.GetLogLength())) {
-		return false, -1
-	}
-
-	for i := max(logStartIdx, int(rpc.GetCommitIndex()) + 1); i < int(firstEntryIndex) + len(rpc.GetEntries()); i++ {
-		if i >= len(r.log) || !entryEqual(r.log[i], rpc.GetEntries()[i - firstEntryIndex]) { return true, i }
-	}
-
-	// you have a lower log term, but the entries are the same
-	return false, -1
 }
 
-func (r *Replica) replaceExistingLog (rpc UpdateMsg, logStartIdx int) []Entry {
-	// dlog.Println("Replica", r.Id, "replacing existing log", len(r.log), rpc.GetStartIndex(), len(rpc.GetEntries()), logStartIdx)
-	firstEntryIndex := int(rpc.GetStartIndex())
-
-	potentialEntries := make([]Entry, 0)
-	for i := logStartIdx; i < len(r.log); i++ {
-		r.inLog.remove(r.log[i])
-		potentialEntries = append(potentialEntries, r.log[i])
+func (r *Replica) resetBenOr() {
+	r.benOrState = emptyBenOrState
+	clearTimer(r.benOrResendTimer)
+	clearTimer(r.benOrWaitTimer)
+	setTimer(r.idleTimer, r.idleTimeout)
+	if !r.leaderState.isLeader {
+		timeout := rand.Intn(r.benOrStartTimeout/2) + r.benOrStartTimeout/2
+		setTimer(r.benOrStartTimer, time.Duration(timeout)*time.Millisecond)
 	}
-	r.log = r.log[:logStartIdx]
-
-	for i := logStartIdx - firstEntryIndex; i < len(rpc.GetEntries()); i++ {
-		r.inLog.add(rpc.GetEntries()[i])
-		r.log = append(r.log, rpc.GetEntries()[i])
-		r.pq.remove(rpc.GetEntries()[i])
-	}
-
-	if r.leaderState.isLeader {
-		r.leaderState.repNextIndex[r.Id] = len(r.log)
-		r.leaderState.repMatchIndex[r.Id] = len(r.log) - 1
-	}
-
-	return potentialEntries
 }
 
-func (r *Replica) updateLogFromRPC (rpc ReplyMsg) bool {
-	// timeStart := time.Now().UnixMicro()
-	oldCommitIndex := r.commitIndex
-
-	var potentialEntries []Entry
-	shouldReplaceLog, startReplacementIdx := r.shouldLogBeReplaced(rpc, r.commitIndex + 1)
-	if shouldReplaceLog {
-		potentialEntries = r.replaceExistingLog(rpc, startReplacementIdx)
-	} else {
-		potentialEntries = rpc.GetEntries()
-	}
-	
-	r.commitIndex = int(rpc.GetCommitIndex())
-	r.logTerm = max(r.logTerm, int(rpc.GetLogTerm()))
-	if r.commitIndex > oldCommitIndex {
-		// dlog.Println("Replica", r.Id, "committing to", r.commitIndex, "from", oldCommitIndex)
-		// if !r.seenBefore(r.benOrState.benOrBroadcastEntry) {
-		// 	r.pq.push(r.benOrState.benOrBroadcastEntry)
-		// }
-		r.benOrState = emptyBenOrState
-
-		if !r.leaderState.isLeader {
-			timeout := rand.Intn(r.benOrStartTimeout/2) + r.benOrStartTimeout/2
-			setTimer(r.benOrStartTimer, time.Duration(timeout)*time.Millisecond)
+func (r *Replica) collectEntries(entries []Entry) {
+	for _, entry := range entries {
+		if !r.seenBefore(entry) {
+			r.pq.push(entry)
 		}
-
-		clearTimer(r.benOrResendTimer)
 	}
+}
 
-	for _, v := range(potentialEntries) {
-		if !r.seenBefore(v) { r.pq.push(v) }
+func (r *Replica) appendQueuedEntries() {
+	for !r.pq.isEmpty() {
+		entry := r.pq.pop()
+		if r.inLog.contains(entry) {
+			continue
+		}
+		entry.Term = int32(r.term)
+		entry.Version = int32(r.leaderState.version)
+		entry.Index = int32(len(r.log))
+		r.log = append(r.log, entry)
+		r.inLog.add(entry)
 	}
+	r.leaderState.repMatchIndex[r.Id] = len(r.log) - 1
+	r.leaderState.repNextIndex[r.Id] = len(r.log)
+}
 
-	for _, v := range(rpc.GetPQEntries()) {
-		if !r.seenBefore(v) { r.pq.push(v) }
+func (r *Replica) getNewValues(msg UpdateMsg) {
+	r.collectEntries(msg.GetEntries())
+	if reply, ok := msg.(ReplyMsg); ok {
+		r.collectEntries(reply.GetPQEntries())
 	}
-
-	// dlog.Println("Replica", r.Id, "pq values5", logToString(r.pq.extractList()))
-
 	if r.leaderState.isLeader {
-		for !r.pq.isEmpty() {
-			entry := r.pq.pop()
-			entry.Term = int32(r.term)
-			entry.Index = int32(len(r.log))
+		r.appendQueuedEntries()
+	}
+}
 
-			if !r.inLog.contains(entry) {
+// Copy the entries so later log changes cannot alter the message
+func (r *Replica) copySuffix(start int) []Entry {
+	if start >= len(r.log) {
+		return nil
+	}
+	return append([]Entry(nil), r.log[start:]...)
+}
+
+func (r *Replica) stampSuffix(first int) {
+	for i := first; i < len(r.log); i++ {
+		r.log[i].Term = int32(r.term)
+		r.log[i].Version = int32(r.leaderState.version)
+		r.log[i].Index = int32(i)
+	}
+}
+
+func (r *Replica) invalidateReplicationFrom(first int) {
+	for replica := 0; replica < r.N; replica++ {
+		if replica != int(r.Id) {
+			r.leaderState.repNextIndex[replica] = min(r.leaderState.repNextIndex[replica], first)
+			r.leaderState.repMatchIndex[replica] = min(r.leaderState.repMatchIndex[replica], first-1)
+		}
+	}
+}
+
+func (r *Replica) hasLogData(msg UpdateMsg, start int) bool {
+	first := int(msg.GetStartIndex())
+	return first >= 1 && first <= max(start, r.commitIndex+1) && first+len(msg.GetEntries()) == int(msg.GetLogLength()) && int(msg.GetLogLength()) > int(msg.GetCommitIndex())
+}
+
+func (r *Replica) updateLog(msg UpdateMsg, start int) bool {
+	if int(msg.GetCommitIndex()) < r.commitIndex {
+		r.getNewValues(msg)
+		return false
+	}
+	if !r.hasLogData(msg, start) {
+		r.sendOneGetCommittedData(int(msg.GetSenderId()))
+		return false
+	}
+
+	oldLength := len(r.log)
+	firstChanged := oldLength
+	changed := false
+	end := int(msg.GetCommitIndex()) + 1
+	if int(msg.GetLogTerm()) >= r.logTerm {
+		end = int(msg.GetLogLength())
+	}
+	first := int(msg.GetStartIndex())
+	var removed []Entry
+
+	copied := false
+	for index := max(start, r.commitIndex+1); index < end; index++ {
+		entry := msg.GetEntries()[index-first]
+		if index >= len(r.log) || !entryEqual(r.log[index], entry) {
+			firstChanged, changed = index, true
+			removed = append(removed, r.log[index:]...)
+			for _, old := range r.log[index:] {
+				r.inLog.remove(old)
+			}
+			if index < len(r.log) {
+				newLog := make([]Entry, index, end)
+				copy(newLog, r.log[:index])
+				r.log = newLog
+			}
+			for j := index; j < end; j++ {
+				entry = msg.GetEntries()[j-first]
+				entry.Index = int32(j)
 				r.log = append(r.log, entry)
 				r.inLog.add(entry)
+				r.pq.remove(entry)
 			}
+			break
 		}
-
-		r.leaderState.repNextIndex[r.Id] = len(r.log)
-		r.leaderState.repMatchIndex[r.Id] = len(r.log) - 1
-
-		if shouldReplaceLog {
-			r.leaderState.repNextIndex[rpc.GetSenderId()] = int(rpc.GetLogLength())
-			r.leaderState.repMatchIndex[rpc.GetSenderId()] = int(rpc.GetLogLength()) - 1
-
-			for i := 0; i < r.N; i++ {
-				if i != int(r.Id) || i != int(rpc.GetSenderId()) {
-					r.leaderState.repNextIndex[i] = min(r.leaderState.repNextIndex[i], startReplacementIdx)
-					r.leaderState.repMatchIndex[i] = min(r.leaderState.repMatchIndex[i], startReplacementIdx - 1)
-				}
+		if stampValid(entry) && !sameStamp(r.log[index], entry) {
+			if !copied {
+				r.log = append([]Entry(nil), r.log...)
+				copied = true
 			}
+			r.log[index].Term, r.log[index].Version = entry.Term, entry.Version
 		}
 	}
+	if int(msg.GetLogTerm()) > r.logTerm && len(r.log) > int(msg.GetLogLength()) {
+		cut := int(msg.GetLogLength())
+		firstChanged, changed = min(firstChanged, cut), true
+		removed = append(removed, r.log[cut:]...)
+		for _, old := range r.log[cut:] {
+			r.inLog.remove(old)
+		}
+		r.log = r.log[:cut:cut]
+	}
+	r.logTerm = max(r.logTerm, int(msg.GetLogTerm()))
+	rewritten := changed && firstChanged < oldLength
+	if rewritten {
+		r.cancelCampaign()
+	}
+	if int(msg.GetCommitIndex()) > r.commitIndex {
+		r.commitIndex = int(msg.GetCommitIndex())
+		r.resetBenOr()
+	}
+	if r.leaderState.isLeader && rewritten {
+		r.leaderState.version++
+		r.invalidateReplicationFrom(firstChanged)
+	}
+	r.collectEntries(removed)
+	r.getNewValues(msg)
+	if r.leaderState.isLeader && changed {
+		r.stampSuffix(firstChanged)
+	}
+	return changed
+}
 
-	// fmt.Println("updateLogFromRPC took", time.Now().UnixMicro() - timeStart, "microseconds")
-	return shouldReplaceLog
+func (r *Replica) updateLogFromRPC(msg ReplyMsg) bool {
+	return r.updateLog(msg, r.commitIndex+1)
 }
 
 func (r *Replica) sendOneGetCommittedData(destId int) {
-	// dlog.Println("Replica", r.Id, "sending get committed data", r.commitIndex, len(r.log))
-
 	entries := make([]Entry, 0)
-	if r.commitIndex + 1 < len(r.log) {
-		entries = r.log[r.commitIndex + 1:]
+	if r.commitIndex+1 < len(r.log) {
+		entries = r.log[r.commitIndex+1:]
 	}
 
 	args := &GetCommittedData{
@@ -900,11 +903,11 @@ func (r *Replica) sendOneGetCommittedData(destId int) {
 }
 
 func (r *Replica) sendGetCommittedData() {
-	// dlog.Println("Replica", r.Id, "sending get committed data", r.commitIndex, len(r.log))
+	setTimer(r.idleTimer, r.idleTimeout)
 
 	entries := make([]Entry, 0)
-	if r.commitIndex + 1 < len(r.log) {
-		entries = r.log[r.commitIndex + 1:]
+	if r.commitIndex+1 < len(r.log) {
+		entries = r.log[r.commitIndex+1:]
 	}
 
 	args := &GetCommittedData{
@@ -921,60 +924,18 @@ func (r *Replica) sendGetCommittedData() {
 func (r *Replica) handleGetCommittedData(rpc *GetCommittedData) {
 	r.handleIncomingTerm(rpc)
 
-	// only respond if we have a higher commit index
-	// if r.isLogMoreUpToDate(rpc) != MoreUpToDate {
-	// 	return
-	// }
-
-	var moreUpToDate bool
-	if r.isLogMoreUpToDate(rpc) != MoreUpToDate {
-		// fmt.Println("huh", r.Id, r.commitIndex, r.logTerm, len(r.log), rpc.CommitIndex, rpc.LogTerm, rpc.LogLength, rpc.StartIndex, len(rpc.Entries))
-		if r.commitIndex + 1 >= int(rpc.GetStartIndex()) {
-			r.updateLogFromRPC(rpc)
-		} else {
-			r.sendOneGetCommittedData(int(rpc.GetSenderId()))
-		}
-		moreUpToDate = false
-	} else {
-		for _, v := range(rpc.Entries) {
-			if !r.seenBefore(v) { r.pq.push(v) }
-		}
-	
-		for _, v := range(rpc.PQEntries) {
-			if !r.seenBefore(v) { r.pq.push(v) }
-		}
-
-		if r.leaderState.isLeader {
-			for !r.pq.isEmpty() {
-				entry := r.pq.pop()
-				entry.Term = int32(r.term)
-				entry.Index = int32(len(r.log))
-
-				if !r.inLog.contains(entry) {
-					r.log = append(r.log, entry)
-					r.inLog.add(entry)
-				}
-			}
-
-			r.leaderState.repNextIndex[r.Id] = len(r.log)
-			r.leaderState.repMatchIndex[r.Id] = len(r.log) - 1
-		}
-		moreUpToDate = true
+	if !r.updateLogIfPossible(rpc) {
+		r.sendOneGetCommittedData(int(rpc.GetSenderId()))
+		return
 	}
 
-	if moreUpToDate {
-		entries := make([]Entry, 0)
-		if rpc.CommitIndex + 1 < int32(len(r.log)) {
-			entries = r.log[rpc.CommitIndex + 1:]
-		}
+	entries := r.copySuffix(int(rpc.CommitIndex) + 1)
 
-		args := &GetCommittedDataReply{
-			SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
-			StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
-		}
-		// dlog.Println("Replica", r.Id, "sending get committed data reply to", rpc.SenderId, "with", r.commitIndex, len(r.log))
-		r.SendMsg(rpc.SenderId, r.getCommittedDataReplyRPC, args)
+	args := &GetCommittedDataReply{
+		SenderId: r.Id, Term: int32(r.term), CommitIndex: int32(r.commitIndex), LogTerm: int32(r.logTerm), LogLength: int32(len(r.log)),
+		StartIndex: rpc.CommitIndex + 1, Entries: entries, PQEntries: r.pq.extractList(),
 	}
+	r.SendMsg(rpc.SenderId, r.getCommittedDataReplyRPC, args)
 }
 
 func (r *Replica) handleGetCommittedDataReply(rpc *GetCommittedDataReply) {
@@ -983,28 +944,6 @@ func (r *Replica) handleGetCommittedDataReply(rpc *GetCommittedDataReply) {
 	if r.isLogMoreUpToDate(rpc) == LessUpToDate {
 		r.updateLogFromRPC(rpc)
 	} else {
-		for _, v := range(rpc.Entries) {
-			if !r.seenBefore(v) { r.pq.push(v) }
-		}
-	
-		for _, v := range(rpc.PQEntries) {
-			if !r.seenBefore(v) { r.pq.push(v) }
-		}
-
-		if r.leaderState.isLeader {
-			for !r.pq.isEmpty() {
-				entry := r.pq.pop()
-				entry.Term = int32(r.term)
-				entry.Index = int32(len(r.log))
-
-				if !r.inLog.contains(entry) {
-					r.log = append(r.log, entry)
-					r.inLog.add(entry)
-				}
-			}
-
-			r.leaderState.repNextIndex[r.Id] = len(r.log)
-			r.leaderState.repMatchIndex[r.Id] = len(r.log) - 1
-		}
+		r.getNewValues(rpc)
 	}
 }

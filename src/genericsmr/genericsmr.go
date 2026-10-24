@@ -143,6 +143,20 @@ type Replica struct {
 	TestingState Testing
 
 	Connected	map[int]bool
+	connectedMu	sync.RWMutex
+}
+
+// Connected is changed by tests while the replica's goroutines read it.
+func (r *Replica) IsConnected(peer int) bool {
+	r.connectedMu.RLock()
+	defer r.connectedMu.RUnlock()
+	return r.Connected[peer]
+}
+
+func (r *Replica) SetConnected(peer int, connected bool) {
+	r.connectedMu.Lock()
+	defer r.connectedMu.Unlock()
+	r.Connected[peer] = connected
 }
 
 func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, dreply bool) *Replica {
@@ -178,6 +192,7 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, dreply b
 		make(chan *Disconnect, CHAN_BUFFER_SIZE),
 		Testing{true, make(map[int]bool), nil, nil},
 		make(map[int]bool),
+		sync.RWMutex{},
 	}
 
 	var err error
@@ -228,7 +243,7 @@ func (r *Replica) ConnectToPeersSim(serverId int, simConn *SimConn, reliable boo
 	r.PeerWriters[serverId] = LockedWriter{bufio.NewWriter(simConn), &sync.Mutex{}}
 
 	// r.TestingState.IsConnected.Mu.Lock()
-	r.Connected[serverId] = true
+	r.SetConnected(serverId, true)
 	r.TestingState.IsReliable[serverId] = reliable
 	dlog.Println("server", r.Id, "connected to server", serverId)
 	// r.TestingState.IsConnected.Mu.Unlock()
@@ -270,7 +285,7 @@ func (r *Replica) ConnectToPeers() {
 		r.Alive[i] = true
 		r.PeerReaders[i] = LockedReader{bufio.NewReader(r.Peers[i]), &sync.Mutex{}}
 		r.PeerWriters[i] = LockedWriter{bufio.NewWriter(r.Peers[i]), &sync.Mutex{}}
-		r.Connected[i] = true
+		r.SetConnected(i, true)
 	}
 	<-done
 	log.Printf("Replica id: %d. Done connecting to peers\n", r.Id)
@@ -334,7 +349,7 @@ func (r *Replica) waitForPeerConnections(done chan bool) {
 		r.PeerReaders[id] = LockedReader{bufio.NewReader(conn), &sync.Mutex{}}
 		r.PeerWriters[id] = LockedWriter{bufio.NewWriter(conn), &sync.Mutex{}}
 		r.Alive[id] = true
-		r.Connected[int(id)] = true
+		r.SetConnected(int(id), true)
 	}
 
 	done <- true
@@ -523,7 +538,7 @@ func (r *Replica) replicaListener(rid int, reader LockedReader) {
 				// }
 				if t, ok := obj.(HasSenderId); ok {
 					// r.TestingState.IsConnected.Mu.Lock()
-					if !r.Connected[int(t.GetSenderId())] {
+					if !r.IsConnected(int(t.GetSenderId())) {
 						// r.TestingState.IsConnected.Mu.Unlock()
 						// fmt.Println("Replica", r.Id, "received message from replica", rid, "of type", msgType, "but replica", t.GetSenderId(), "is not connected");
 						continue
@@ -715,7 +730,7 @@ func (r *Replica) RegisterRPC(msgObj fastrpc.Serializable, notify chan fastrpc.S
 func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) {
 	// if !r.TestingState.IsProduction{
 		// r.TestingState.IsConnected.Mu.Lock()
-		if !r.Connected[int(peerId)] {
+		if !r.IsConnected(int(peerId)) {
 			// r.TestingState.IsConnected.Mu.Unlock()
 			// fmt.Println("Replica", r.Id, "wants to send message to peer", peerId, "but it is not connected")
 			return
@@ -734,7 +749,7 @@ func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) {
 			}
 
 			// r.TestingState.IsConnected.Mu.Lock()
-			if r.Connected[int(peerId)] {
+			if r.IsConnected(int(peerId)) {
 				// r.TestingState.IsConnected.Mu.Unlock()
 				// fmt.Println("Replica", r.Id, "sending message to peer", peerId)
 				w := r.PeerWriters[peerId]
